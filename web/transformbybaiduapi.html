@@ -99,7 +99,7 @@
 
     <script type="text/javascript" src="./jquery.js"></script>
     <script type="text/javascript" src="./xlsx.core.min.js"></script>
-    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=hwl54yfTLw9XqGVemYwyezHXUT2Ajyoc"></script>
+    <script src="https://api.map.baidu.com/api?v=2.0&ak=hwl54yfTLw9XqGVemYwyezHXUT2Ajyoc"></script>
     <script type="text/javascript">
       function selectFile() {
         document.getElementById('file').click();
@@ -226,14 +226,14 @@
 
             if (index > 1) {
               temp.pop(); //移除最后一个事件栏
-              const lng = +temp[1];
-              const lat = +temp[2];
-              const data = coordtransform.wgs84tobd09({
-                lng,
-                lat,
-              });
-              temp[1] = data.lng;
-              temp[2] = data.lat;
+              // const lng = +temp[1];
+              // const lat = +temp[2];
+              // const data = coordtransform.wgs84tobd09({
+              //   lng,
+              //   lat,
+              // });
+              // temp[1] = data.lng;
+              // temp[2] = data.lat;
               csv.push(temp.join(','));
             } else {
               csv.push(temp.join(','));
@@ -346,12 +346,69 @@
           readWorkbook(workbook);
         });
       }
+      async function cordinateTransform(points) {
+        let orginPointObjects = [];
+        let resultPoints = [];
+        const total = Math.ceil(points.length / 10);
+
+        for (let i = 0; i < total; i++) {
+          const tenPoints = points.slice(0 + i * 10, (i + 1) * 10);
+          const result = await tenBatchTransform(tenPoints);
+          resultPoints = [...resultPoints, ...result];
+        }
+        return resultPoints;
+      }
+
+      function tenBatchTransform(tenPoints) {
+        let baiduRawPoints = [];
+        for (let i = 0; i < tenPoints.length; i++) {
+          baiduRawPoints.push(
+            new BMap.Point(tenPoints[i].lng, tenPoints[i].lat),
+          );
+        }
+        return new Promise((resolve, reject) => {
+          const convertor = new BMap.Convertor();
+          convertor.translate(baiduRawPoints, 1, 5, function (data) {
+            if (data.status === 0) {
+              const baiduPoints = data.points.map((item, index) => {
+                return {
+                  ...item,
+                  name: tenPoints[index].name,
+                };
+              });
+              resolve(baiduPoints);
+            } else {
+              resolve([]);
+            }
+          });
+        });
+      }
 
       function exportExcel() {
         var csv = table2csv($('#result table')[0]);
-        var sheet = csv2sheet(csv);
-        var blob = sheet2blob(sheet);
-        openDownloadDialog(blob, '导出.xlsx');
+        const pointsList = csv
+          .split('\n')
+          .slice(1)
+          .map((item, index) => {
+            const data = item.split(',');
+            return {
+              lng: data[1],
+              lat: data[2],
+              name: data[0],
+            };
+          });
+        (async () => {
+          const baiduPoints = await cordinateTransform(pointsList);
+          const dataStrings = baiduPoints.map((item) => {
+            return `${item.name},${item.lng},${item.lat}`;
+          });
+          const finalcsv = [csv.split('\n').slice(0, 1), ...dataStrings].join(
+            '\n',
+          );
+          var sheet = csv2sheet(finalcsv);
+          var blob = sheet2blob(sheet);
+          openDownloadDialog(blob, '导出.xlsx');
+        })();
       }
     </script>
     <script>
@@ -385,8 +442,8 @@
           var layer = new L.marker([latlngs[i].lat, latlngs[i].lng]);
           layers.push(layer);
           //baidu add marker
-          var marker1 = new BMapGL.Marker(
-            new BMapGL.Point(latlngs[i].lng, latlngs[i].lat),
+          var marker1 = new BMap.Marker(
+            new BMap.Point(latlngs[i].lng, latlngs[i].lat),
           );
           baiduMap.addOverlay(marker1);
         }
@@ -395,8 +452,8 @@
       }
     </script>
     <script>
-      var baiduMap = new BMapGL.Map('baiduMap');
-      baiduMap.centerAndZoom(new BMapGL.Point(103.922748, 30.577003), 18);
+      var baiduMap = new BMap.Map('baiduMap');
+      baiduMap.centerAndZoom(new BMap.Point(103.922748, 30.577003), 18);
       baiduMap.enableScrollWheelZoom(true);
     </script>
     <script>
@@ -408,10 +465,43 @@
         document.getElementById(
           'wgs84point',
         ).innerHTML = `<span class="geoInfo">纬度:${lat}</span>,<span class="geoInfo">经度:${lng}</span>`;
-        const baiduPoint = coordtransform.wgs84tobd09(point);
-        document.getElementById(
-          'baidupoint',
-        ).innerHTML = `<span class="geoInfo">纬度:${baiduPoint.lat}</span>,<span class="geoInfo">经度:${baiduPoint.lng}</span>`;
+        // const baiduPoint = coordtransform.wgs84tobd09(point);
+        const convertor = new BMap.Convertor();
+        //坐标转换完之后的回调函数
+        translateCallback = function (data) {
+          if (data.status === 0) {
+            //baidu
+            const baiduPoint = data.points[0];
+            document.getElementById(
+              'baidupoint',
+            ).innerHTML = `<span class="geoInfo">纬度:${baiduPoint.lat}</span>,<span class="geoInfo">经度:${baiduPoint.lng}</span>`;
+            baiduMap.clearOverlays();
+            const marker = new BMap.Marker(
+              new BMap.Point(baiduPoint.lng, baiduPoint.lat),
+            );
+            baiduMap.addOverlay(marker);
+            // //百度地图信息框
+            // var opts = {
+            //   width: 80,
+            //   height: 0,
+            //   title: '',
+            // };
+            // var infoWindow = new BMap.InfoWindow(name, opts);
+            // const infoWindowPoint = new BMap.Point(
+            //   baiduPoint.lng,
+            //   baiduPoint.lat,
+            // );
+            // baiduMap.openInfoWindow(infoWindow, infoWindowPoint);
+            // ///
+            baiduMap.centerAndZoom(
+              new BMap.Point(baiduPoint.lng, baiduPoint.lat),
+              18,
+            );
+          }
+        };
+        const ggpoint = new BMap.Point(point.lng, point.lat);
+        convertor.translate([ggpoint], 1, 5, translateCallback);
+
         //tianditu
         tiandituLayer && tiandituLayer.remove();
         tiandituLayer = L.marker([lat, lng]).addTo(TiandituMap);
@@ -420,29 +510,6 @@
         TiandituMap.panTo([lat, lng], {
           animate: true,
         });
-        //baidu
-        baiduMap.clearOverlays();
-        const marker = new BMapGL.Marker(
-          new BMapGL.Point(baiduPoint.lng, baiduPoint.lat),
-        );
-        baiduMap.addOverlay(marker);
-        // //百度地图信息框
-        // var opts = {
-        //   width: 80,
-        //   height: 0,
-        //   title: '',
-        // };
-        // var infoWindow = new BMapGL.InfoWindow(name, opts);
-        // const infoWindowPoint = new BMapGL.Point(
-        //   baiduPoint.lng,
-        //   baiduPoint.lat,
-        // );
-        // baiduMap.openInfoWindow(infoWindow, infoWindowPoint);
-        // ///
-        baiduMap.centerAndZoom(
-          new BMapGL.Point(baiduPoint.lng, baiduPoint.lat),
-          18,
-        );
       }
     </script>
   </body>
