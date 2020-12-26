@@ -140,14 +140,28 @@
   var out_of_china = function out_of_china(lng, lat) {
     var lat = +lat;
     var lng = +lng;
-    // 纬度 3.86~53.55, 经度 73.66~135.05 
+    // 纬度 3.86~53.55, 经度 73.66~135.05
     return !(lng > 73.66 && lng < 135.05 && lat > 3.86 && lat < 53.55);
   };
+
+  function wgs84tobd09(latlng) {
+    const { lat, lng } = latlng;
+    const temp = wgs84togcj02(lng, lat);
+    var result = gcj02tobd09(
+      temp[0],
+      temp[1],
+    );
+    return {
+      lng: result[0],
+      lat: result[1],
+    };
+  }
 
   return {
     bd09togcj02: bd09togcj02,
     gcj02tobd09: gcj02tobd09,
     wgs84togcj02: wgs84togcj02,
-    gcj02towgs84: gcj02towgs84
+    gcj02towgs84: gcj02towgs84,
+    wgs84tobd09: wgs84tobd09
   }
 }));
