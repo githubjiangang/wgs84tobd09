@@ -48,9 +48,13 @@
               style="display: none"
               accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             />
+            <p>
+              请按照导入模板格式导入
+              <a href="./template.xlsx">点位导入模板下载</a>
+            </p>
+
             <button onclick="selectFile()">导入WGS84坐标Excel</button>
             <button onclick="exportExcel()">导出百度坐标Excel</button>
-            <p>读取第一个sheet,保存获得转换后的百度坐标excel文件</p>
           </div>
           <!-- contenteditable -->
           <div
@@ -61,6 +65,7 @@
 
         <div style="width: 100%">
           <div>
+            <p>点击定位按钮，可以核对转换后的坐标在百度地图上的效果</p>
             <p>
               <b
                 >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;当前点位地址:&nbsp;&nbsp;</b
@@ -80,11 +85,11 @@
               id="tiandituMapWrap"
               style="border: 1px solid black; width: 100%"
             >
-              <h5>天地图坐标（WGS84坐标）</h5>
+              <h5>在天地图（WGS84坐标）下的位置</h5>
               <div id="tiandituMap" style="height: 500px; width: 100%"></div>
             </div>
             <div id="baiduMapWrap" style="border: 1px solid black; width: 100%">
-              <h5>百度坐标</h5>
+              <h5>在百度地图下的位置（已转换坐标）</h5>
               <div id="baiduMap" style="height: 500px; width: 100%"></div>
             </div>
           </div>
@@ -246,9 +251,7 @@
           row = row.split(',');
           if (i == 0)
             sheet['!ref'] =
-              'A1:' +
-              String.fromCharCode(65 + row.length - 1) +
-              (csv.length - 1);
+              'A1:' + String.fromCharCode(65 + row.length - 1) + csv.length;
           row.forEach(function (col, j) {
             sheet[String.fromCharCode(65 + j) + (i + 1)] = { v: col };
           });
