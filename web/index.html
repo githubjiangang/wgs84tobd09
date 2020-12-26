@@ -24,6 +24,11 @@
         padding: 0;
         margin: 0;
       }
+      .geoInfo {
+        color: green;
+        width: 200px;
+        display: inline-block;
+      }
       .container {
         width: 100%;
         margin: 0 auto;
@@ -35,7 +40,6 @@
   <body>
     <div class="container">
       <div style="display: flex">
-        <!-- <div id="result" style="width: 500px" contenteditable></div> -->
         <div style="width: 500px">
           <div class="mt-sm">
             <input
@@ -44,29 +48,39 @@
               style="display: none"
               accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             />
-            <button onclick="selectFile()">导入Excel</button>
-            <button onclick="exportExcel()">导出Excel</button>
-            <p>读取excel第一个sheet,可编辑,保存即可导出excel文件。</p>
+            <button onclick="selectFile()">导入WGS84坐标Excel</button>
+            <button onclick="exportExcel()">导出百度坐标Excel</button>
+            <p>读取第一个sheet,保存获得转换后的百度坐标excel文件</p>
           </div>
+          <!-- contenteditable -->
           <div
             id="result"
-            contenteditable
             style="width: 500px; overflow-y: scroll; height: 80vh"
           ></div>
         </div>
 
         <div style="width: 100%">
           <div>
-            <p><b>当前选中的地址:</b><span id="address"></span></p>
-            <p><b>WGS84坐标:</b><span id="wgs84point"></span></p>
-            <p><b>转换后的百度坐标:</b><span id="baidupoint"></span></p>
+            <p>
+              <b
+                >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;当前点位地址:&nbsp;&nbsp;</b
+              ><span id="address" style="color: red"></span>
+            </p>
+            <p>
+              <b
+                >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WGS84坐标:&nbsp;&nbsp;</b
+              ><span id="wgs84point"></span>
+            </p>
+            <p>
+              <b>转换后的百度坐标:&nbsp;&nbsp;</b><span id="baidupoint"></span>
+            </p>
           </div>
           <div style="display: flex">
             <div
               id="tiandituMapWrap"
               style="border: 1px solid black; width: 100%"
             >
-              <h5>天地图坐标</h5>
+              <h5>天地图坐标（WGS84坐标）</h5>
               <div id="tiandituMap" style="height: 500px; width: 100%"></div>
             </div>
             <div id="baiduMapWrap" style="border: 1px solid black; width: 100%">
@@ -134,6 +148,7 @@
         const tableHtml = csv2table(csv);
         window.mapData = getMapData(csv);
         // addMarkers(mapData.slice(0, 3));
+        locate(1);
         document.getElementById('result').innerHTML = tableHtml;
       }
 
@@ -181,7 +196,7 @@
             };
 
             html +=
-              '<td><button onclick="locate(' +
+              '<td><button style="cursor:pointer;" onclick="locate(' +
               idx +
               ')" contenteditable="false">定位</button></td>';
             html += '</tr>';
@@ -389,17 +404,16 @@
         document.getElementById('address').innerHTML = name;
         document.getElementById(
           'wgs84point',
-        ).innerHTML = `lat:${lat},lng:${lng}`;
+        ).innerHTML = `<span class="geoInfo">纬度:${lat}</span>,<span class="geoInfo">经度:${lng}</span>`;
         const baiduPoint = coordtransform.wgs84tobd09(point);
         document.getElementById(
           'baidupoint',
-        ).innerHTML = `lat:${baiduPoint.lat},lng:${baiduPoint.lng}`;
+        ).innerHTML = `<span class="geoInfo">纬度:${baiduPoint.lat}</span>,<span class="geoInfo">经度:${baiduPoint.lng}</span>`;
         //tianditu
         tiandituLayer && tiandituLayer.remove();
-        tiandituLayer = L.marker([lat, lng])
-          .addTo(TiandituMap)
-          .bindPopup(name)
-          .openPopup();
+        tiandituLayer = L.marker([lat, lng]).addTo(TiandituMap);
+        // .bindPopup(name)
+        // .openPopup();
         TiandituMap.panTo([lat, lng], {
           animate: true,
         });
@@ -409,6 +423,19 @@
           new BMapGL.Point(baiduPoint.lng, baiduPoint.lat),
         );
         baiduMap.addOverlay(marker);
+        // //百度地图信息框
+        // var opts = {
+        //   width: 80,
+        //   height: 0,
+        //   title: '',
+        // };
+        // var infoWindow = new BMapGL.InfoWindow(name, opts);
+        // const infoWindowPoint = new BMapGL.Point(
+        //   baiduPoint.lng,
+        //   baiduPoint.lat,
+        // );
+        // baiduMap.openInfoWindow(infoWindow, infoWindowPoint);
+        // ///
         baiduMap.centerAndZoom(
           new BMapGL.Point(baiduPoint.lng, baiduPoint.lat),
           18,
