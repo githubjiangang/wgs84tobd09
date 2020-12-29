@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+  <head>
+    <meta charset="UTF-8" />
+    <title>百度坐标转WGS84坐标</title>
+    <link rel="stylesheet" type="text/css" href="./leaflet.css" />
+    <script type="text/javascript" src="./leaflet.js"></script>
+    <script type="text/javascript" src="./coordtransform.js"></script>
+    <style type="text/css">
+      table {
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: solid 1px #6d6d6d;
+        padding: 5px 10px;
+      }
+      .mt-sm {
+        width: 1024px;
+        margin: 8px auto;
+      }
+      body {
+        background: #f4f4f4;
+        padding: 0;
+        margin: 0;
+      }
+      .geoInfo {
+        color: green;
+        width: 200px;
+        display: inline-block;
+      }
+      .container {
+        width: 100%;
+        margin: 0 auto;
+        background: #fff;
+        padding: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div style="display: flex">
+        <div style="width: 500px">
+          <div class="mt-sm">
+            <input
+              type="file"
+              id="file"
+              style="display: none"
+              accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            />
+            <p>
+              请按照导入模板格式导入
+              <a href="./template.xlsx">点位导入模板下载</a>
+            </p>
+
+            <button onclick="selectFile()">导入百度坐标Excel</button>
+            <button onclick="exportExcel()">导出WGS84坐标Excel</button>
+          </div>
+          <!-- contenteditable -->
+          <div
+            id="result"
+            style="width: 500px; overflow-y: scroll; height: 80vh"
+          ></div>
+        </div>
+
+        <div style="width: 100%">
+          <div>
+            <p>
+              点击定位按钮，可以核对转换后的坐标在WGS84（天地图）地图上的效果
+            </p>
+            <p>
+              <b
+                >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;当前点位地址:&nbsp;&nbsp;</b
+              ><span id="address" style="color: red"></span>
+            </p>
+            <p>
+              <b
+                >&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;百度坐标:&nbsp;&nbsp;</b
+              ><span id="baidupoint"></span>
+            </p>
+            <p>
+              <b>转换后的WGS84坐标:&nbsp;&nbsp;</b><span id="wgs84point"></span>
+            </p>
+          </div>
+          <div style="display: flex">
+            <div id="baiduMapWrap" style="border: 1px solid black; width: 100%">
+              <h5>在百度地图下的位置</h5>
+              <div id="baiduMap" style="height: 500px; width: 100%"></div>
+            </div>
+            <div
+              id="tiandituMapWrap"
+              style="border: 1px solid black; width: 100%"
+            >
+              <h5>在天地图（WGS84坐标）下的位置（已转换坐标）</h5>
+              <div id="tiandituMap" style="height: 500px; width: 100%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="text/javascript" src="./jquery.js"></script>
+    <script type="text/javascript" src="./xlsx.core.min.js"></script>
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=hwl54yfTLw9XqGVemYwyezHXUT2Ajyoc"></script>
+    <script type="text/javascript">
+      function selectFile() {
+        document.getElementById('file').click();
+      }
+
+      // 读取本地excel文件
+      function readWorkbookFromLocalFile(file, callback) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var data = e.target.result;
+          var workbook = XLSX.read(data, { type: 'binary' });
+          if (callback) callback(workbook);
+        };
+        reader.readAsBinaryString(file);
+      }
+
+      // 从网络上读取某个excel文件，url必须同域，否则报错
+      function readWorkbookFromRemoteFile(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('get', url, true);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function (e) {
+          if (xhr.status == 200) {
+            var data = new Uint8Array(xhr.response);
+            var workbook = XLSX.read(data, { type: 'array' });
+            if (callback) callback(workbook);
+          }
+        };
+        xhr.send();
+      }
+
+      // 读取 excel文件
+      function outputWorkbook(workbook) {
+        var sheetNames = workbook.SheetNames; // 工作表名称集合
+        sheetNames.forEach((name) => {
+          var worksheet = workbook.Sheets[name]; // 只能通过工作表名称来获取指定工作表
+          for (var key in worksheet) {
+            // v是读取单元格的原始值
+            console.log(
+              key,
+              key[0] === '!' ? worksheet[key] : worksheet[key].v,
+            );
+          }
+        });
+      }
+
+      function readWorkbook(workbook) {
+        var sheetNames = workbook.SheetNames; // 工作表名称集合
+        var worksheet = workbook.Sheets[sheetNames[0]]; // 这里我们只读取第一张sheet
+        var csv = XLSX.utils.sheet_to_csv(worksheet);
+        const tableHtml = csv2table(csv);
+        window.mapData = getMapData(csv);
+        // addMarkers(mapData.slice(0, 3));
+        locate(1);
+        document.getElementById('result').innerHTML = tableHtml;
+      }
+
+      function getMapData(csv) {
+        const mapData = [];
+        var rows = csv.split('\n');
+        rows.pop(); // 最后一行没用的
+        // rows.shift();
+        rows.forEach(function (row, idx) {
+          const datas = row.split(',');
+          const location = { name: datas[0], lng: datas[1], lat: datas[2] };
+          mapData.push(location);
+        });
+        return mapData;
+      }
+
+      // 将csv转换成表格
+      function csv2table(csv) {
+        var html = '<table>';
+        var rows = csv.split('\n');
+        rows.pop(); // 最后一行没用的
+        rows.forEach(function (row, idx) {
+          var columns = row.split(',');
+          columns.unshift(idx + 1); // 添加行索引
+          if (idx == 0) {
+            // 添加列索引
+            html += '<tr>';
+            for (var i = 0; i < columns.length; i++) {
+              html +=
+                '<th>' +
+                (i == 0 ? '' : String.fromCharCode(65 + i - 1)) +
+                '</th>';
+            }
+            html += '</tr>';
+          }
+          html += '<tr>';
+          columns.forEach(function (column) {
+            html += '<td>' + column + '</td>';
+          });
+          if (idx > 0) {
+            const point = {
+              lat: columns[3],
+              lng: columns[2],
+              name: columns[1],
+            };
+
+            html +=
+              '<td><button style="cursor:pointer;" onclick="locate(' +
+              idx +
+              ')" contenteditable="false">定位</button></td>';
+            html += '</tr>';
+          }
+        });
+        html += '</table>';
+        return html;
+      }
+
+      function table2csv(table) {
+        var csv = [];
+        $(table)
+          .find('tr')
+          .each(function (index, item) {
+            var temp = [];
+            $(this)
+              .find('td')
+              .each(function () {
+                temp.push($(this).html());
+              });
+            temp.shift(); // 移除第一个
+
+            if (index > 1) {
+              temp.pop(); //移除最后一个事件栏
+              const lng = +temp[1];
+              const lat = +temp[2];
+              const data = coordtransform.bd09towgs84({
+                lng,
+                lat,
+              });
+              temp[1] = data.lng;
+              temp[2] = data.lat;
+              csv.push(temp.join(','));
+            } else {
+              csv.push(temp.join(','));
+            }
+          });
+        csv.shift();
+        return csv.join('\n');
+      }
+
+      // csv转sheet对象
+      function csv2sheet(csv) {
+        var sheet = {}; // 将要生成的sheet
+        csv = csv.split('\n');
+        csv.forEach(function (row, i) {
+          row = row.split(',');
+          if (i == 0)
+            sheet['!ref'] =
+              'A1:' + String.fromCharCode(65 + row.length - 1) + csv.length;
+          row.forEach(function (col, j) {
+            sheet[String.fromCharCode(65 + j) + (i + 1)] = { v: col };
+          });
+        });
+        return sheet;
+      }
+
+      // 将一个sheet转成最终的excel文件的blob对象，然后利用URL.createObjectURL下载
+      function sheet2blob(sheet, sheetName) {
+        sheetName = sheetName || 'sheet1';
+        var workbook = {
+          SheetNames: [sheetName],
+          Sheets: {},
+        };
+        workbook.Sheets[sheetName] = sheet;
+        // 生成excel的配置项
+        var wopts = {
+          bookType: 'xlsx', // 要生成的文件类型
+          bookSST: false, // 是否生成Shared String Table，官方解释是，如果开启生成速度会下降，但在低版本IOS设备上有更好的兼容性
+          type: 'binary',
+        };
+        var wbout = XLSX.write(workbook, wopts);
+        var blob = new Blob([s2ab(wbout)], {
+          type: 'application/octet-stream',
+        });
+        // 字符串转ArrayBuffer
+        function s2ab(s) {
+          var buf = new ArrayBuffer(s.length);
+          var view = new Uint8Array(buf);
+          for (var i = 0; i != s.length; ++i) view[i] = s.charCodeAt(i) & 0xff;
+          return buf;
+        }
+        return blob;
+      }
+
+      /**
+       * 通用的打开下载对话框方法，没有测试过具体兼容性
+       * @param url 下载地址，也可以是一个blob对象，必选
+       * @param saveName 保存文件名，可选
+       */
+      function openDownloadDialog(url, saveName) {
+        if (typeof url == 'object' && url instanceof Blob) {
+          url = URL.createObjectURL(url); // 创建blob地址
+        }
+        var aLink = document.createElement('a');
+        aLink.href = url;
+        aLink.download = saveName || ''; // HTML5新增的属性，指定保存文件名，可以不要后缀，注意，file:///模式下不会生效
+        var event;
+        if (window.MouseEvent) event = new MouseEvent('click');
+        else {
+          event = document.createEvent('MouseEvents');
+          event.initMouseEvent(
+            'click',
+            true,
+            false,
+            window,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            false,
+            false,
+            false,
+            0,
+            null,
+          );
+        }
+        aLink.dispatchEvent(event);
+      }
+
+      $(function () {
+        document
+          .getElementById('file')
+          .addEventListener('change', function (e) {
+            var files = e.target.files;
+            if (files.length == 0) return;
+            var f = files[0];
+            if (!/\.xlsx$/g.test(f.name)) {
+              alert('仅支持读取xlsx格式！');
+              return;
+            }
+            readWorkbookFromLocalFile(f, function (workbook) {
+              readWorkbook(workbook);
+            });
+          });
+      });
+
+      function loadRemoteFile(url) {
+        readWorkbookFromRemoteFile(url, function (workbook) {
+          readWorkbook(workbook);
+        });
+      }
+
+      function exportExcel() {
+        var csv = table2csv($('#result table')[0]);
+        var sheet = csv2sheet(csv);
+        var blob = sheet2blob(sheet);
+        openDownloadDialog(blob, '导出.xlsx');
+      }
+    </script>
+    <script>
+      var TiandituMap;
+      window.onload = function () {
+        TiandituMap = L.map('tiandituMap', {
+          center: [30.577003, 103.922748],
+          zoom: 18,
+        });
+        // 瓦片
+        const layer = L.tileLayer(
+          'http://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=bfc1cfc09a68392042b48550e977f2d1',
+          {
+            subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
+          },
+        );
+        layer.options.minZoom = 1;
+        layer.options.maxZoom = 20;
+        layer.options.maxNativeZoom = 20;
+        layer.addTo(TiandituMap);
+        // 地名标注
+        L.tileLayer(
+          'http://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=bfc1cfc09a68392042b48550e977f2d1',
+          {
+            subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
+          },
+        ).addTo(TiandituMap);
+      };
+      function addMarkers(latlngs) {
+        var layers = [];
+
+        for (let i = 0; i < latlngs.length; i++) {
+          var layer = new L.marker([latlngs[i].lat, latlngs[i].lng]);
+          layers.push(layer);
+          //baidu add marker
+          var marker1 = new BMapGL.Marker(
+            new BMapGL.Point(latlngs[i].lng, latlngs[i].lat),
+          );
+          baiduMap.addOverlay(marker1);
+        }
+        var myGroup = L.layerGroup(layers);
+        TiandituMap.addLayer(myGroup);
+      }
+    </script>
+    <script>
+      var baiduMap = new BMapGL.Map('baiduMap');
+      baiduMap.centerAndZoom(
+        new BMapGL.Point(103.93122617948188, 30.580506022362613),
+        18,
+      );
+      baiduMap.enableScrollWheelZoom(true);
+    </script>
+    <script>
+      let tiandituLayer;
+      function locate(index) {
+        const point = mapData[index];
+        const { lat, lng, name } = point;
+        document.getElementById('address').innerHTML = name;
+        document.getElementById(
+          'baidupoint',
+        ).innerHTML = `<span class="geoInfo">纬度:${lat}</span>,<span class="geoInfo">经度:${lng}</span>`;
+        const wgs84Point = coordtransform.bd09towgs84(point);
+        document.getElementById(
+          'wgs84point',
+        ).innerHTML = `<span class="geoInfo">纬度:${wgs84Point.lat}</span>,<span class="geoInfo">经度:${wgs84Point.lng}</span>`;
+        //tianditu
+        tiandituLayer && tiandituLayer.remove();
+        tiandituLayer = L.marker([wgs84Point.lat, wgs84Point.lng]).addTo(
+          TiandituMap,
+        );
+        // .bindPopup(name)
+        // .openPopup();
+        TiandituMap.panTo([wgs84Point.lat, wgs84Point.lng], {
+          animate: true,
+        });
+        //baidu
+        baiduMap.clearOverlays();
+        const marker = new BMapGL.Marker(new BMapGL.Point(lng, lat));
+        baiduMap.addOverlay(marker);
+        // //百度地图信息框
+        // var opts = {
+        //   width: 80,
+        //   height: 0,
+        //   title: '',
+        // };
+        // var infoWindow = new BMapGL.InfoWindow(name, opts);
+        // const infoWindowPoint = new BMapGL.Point(
+        //   baiduPoint.lng,
+        //   baiduPoint.lat,
+        // );
+        // baiduMap.openInfoWindow(infoWindow, infoWindowPoint);
+        // ///
+        baiduMap.centerAndZoom(new BMapGL.Point(lng, lat), 18);
+      }
+    </script>
+  </body>
+</html>

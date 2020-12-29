@@ -156,8 +156,21 @@
       lat: result[1],
     };
   }
+  function bd09towgs84(latlng) {
+    const { lat, lng } = latlng;
+    const temp = bd09togcj02(lng, lat);
+    var result = gcj02towgs84(
+      temp[0],
+      temp[1],
+    );
+    return {
+      lng: result[0],
+      lat: result[1],
+    };
+  }
 
   return {
+    bd09towgs84: bd09towgs84,
     bd09togcj02: bd09togcj02,
     gcj02tobd09: gcj02tobd09,
     wgs84togcj02: wgs84togcj02,
